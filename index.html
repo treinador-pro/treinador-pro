@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Treinador Pro — Definitivo</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:16px;max-width:900px}
+  h1{margin-bottom:6px}
+  label{display:block;margin-top:8px}
+  input,select,button{padding:8px;margin:6px 0;border-radius:6px}
+  button{cursor:pointer}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .card{background:#f7f7f7;border-radius:8px;padding:12px;margin-top:12px}
+  .small{font-size:0.9rem;color:#444}
+  .danger{color:#a00}
+  pre{white-space:pre-wrap}
+</style>
+</head>
+<body>
+
+<h1>Treinador Pro (Definitivo)</h1>
+<p class="small">Salva localmente e continua de onde parou. Gere o treino imprimível e instale como app.</p>
+
+<div class="card">
+  <label>Modo rápido / Sessão</label>
+  <div class="row">
+    <select id="sessionMode">
+      <option value="manual">Manual</option>
+      <option value="A">Treino A (Peito/Tríceps)</option>
+      <option value="B">Treino B (Costas/Bíceps)</option>
+      <option value="C">Treino C (Pernas)</option>
+    </select>
+    <button id="startQuick">Botão rápido (Iniciar/Continuar)</button>
+    <button id="resumeSession">Retomar sessão</button>
+    <button id="endSession">Finalizar sessão</button>
+    <button id="resetAll" class="danger">Resetar tudo</button>
+  </div>
+
+  <div id="statusPanel" class="card" style="margin-top:10px">
+    <strong>Posicionamento atual:</strong>
+    <div id="positioning" class="small">Carregando...</div>
+    <div id="perExerciseStatus" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Registrar exercício (um por vez)</h3>
+
+  <label>Exercício</label>
+  <select id="tipo">
+    <option value="supino">Supino (halteres)</option>
+    <option value="barra">Barra fixa</option>
+    <option value="paralela">Paralela (dip)</option>
+    <option value="agachamento">Agachamento</option>
+  </select>
+
+  <label>Reps (S1, S2, S3)</label>
+  <div class="row">
+    <input id="r1" type="number" placeholder="S1" min="0">
+    <input id="r2" type="number" placeholder="S2" min="0">
+    <input id="r3" type="number" placeholder="S3" min="0">
+  </div>
+
+  <label>Peso (kg) — por halter ou carga usada (deixe vazio para usar referência atual)</label>
+  <input id="peso" type="number" placeholder="ex: 11" min="0" step="0.1">
+
+  <label>Dificuldade percebida</label>
+  <select id="dif">
+    <option value="1">1 - Fácil</option>
+    <option value="2">2 - Leve</option>
+    <option value="3">3 - Médio</option>
+    <option value="4">4 - Difícil</option>
+    <option value="5">5 - Muito difícil</option>
+  </select>
+
+  <div class="row">
+    <button id="addBtn">Adicionar (registrar)</button>
+    <button id="saveState">Salvar agora</button>
+  </div>
+
+  <div id="lastAction" class="small" style="margin-top:8px"></div>
+</div>
+
+<div class="card">
+  <h3>Treino acumulado / Próximo treino</h3>
+  <div id="treinoList" class="small">Nenhum exercício adicionado ainda.</div>
+
+  <div style="margin-top:8px">
+    <button id="generatePrintable">Gerar texto imprimível</button>
+    <button id="downloadState">Exportar backup (.json)</button>
+    <input type="file" id="loadFile" style="display:none">
+    <button id="importBackup">Importar backup (.json)</button>
+  </div>
+</div>
+
+<script>
+/* ======= Persistência ======= */
+const STORAGE_KEY = "treinador_state_v2";
+const SESSION_KEY = "treinador_session_v2";
+
+function defaultState(){
+  return {
+    exercises: {
+      agachamento:{peso:32,history:[],variation_index:0},
+      barra:{peso:0,history:[],variation_index:0},
+      paralela:{peso:0,history:[],variation_index:0},
+      supino:{peso:11,history:[],variation_index:0}
+    },
+    updated: new Date().toISOString()
+  };
+}
+function defaultSession(){
+  return { plan: [], currentStep: 0, inProgress: false, startedAt: null };
+}
+
+let state = (function(){ try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultState(); } catch(e){ return defaultState(); } })();
+let session = (function(){ try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || defaultSession(); } catch(e){ return defaultSession(); } })();
+
+let treino = session.plan || [];
+
+function saveState(){ state.updated = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function saveSession(){ session.plan = treino; localStorage.setItem(SESSION_KEY, JSON.stringify(session)); }
+
+/* ======= Lógica de treino ======= */
+const VARIACOES = {
+  agachamento:["normal","pausado","lento","frontal leve"],
+  barra:["pronada_aberta","pronada_fechada","supinada","toque_peito"],
+  paralela:["peito","triceps","com_peso","pernas_elevadas"],
+  supino:["reto","inclinado","lento"]
+};
+
+const MANUAL = {
+  agachamento:[
+    "Desça controlado (2-3s). Mantenha coluna neutra.",
+    "Joelhos alinhados com os pés.",
+    "Suba sem perder postura. Não sacrificar execução por carga."
+  ],
+  barra:[
+    "Suba até o queixo passar da barra.",
+    "Desça controlado, evite balanço.",
+    "Foco na contração das costas; respire no movimento."
+  ],
+  paralela:[
+    "Descer até ~90° no cotovelo.",
+    "Subir sem travar.",
+    "Controle do movimento - ritmo constante."
+  ],
+  supino:[
+    "Descer controlado (2s).",
+    "Subir com força mantendo alinhamento.",
+    "Não bater os halteres; estabilidade no tronco."
+  ]
+};
+
+function regraProgressao(minRep){
+  if(minRep >= 10) return {acao:"AUMENTAR",series:[10,9,8],delta:2};
+  if(minRep >= 8)  return {acao:"MANTER",series:[10,9,8],delta:0};
+  return {acao:"REDUZIR",series:[8,7,6],delta:-2};
+}
+
+function ajustarComAprendizado(name, reps, pesoInput, dificuldade){
+  const exState = state.exercises[name] || {peso:0,history:[],variation_index:0};
+  exState.history.push({reps, peso: (pesoInput!=null?pesoInput:exState.peso), dif:dificuldade, at: new Date().toISOString()});
+  if(exState.history.length>8) exState.history = exState.history.slice(-8);
+
+  const minRep = Math.min(...reps);
+  let base = regraProgressao(minRep);
+
+  // tendência
+  const mins = exState.history.map(h => Math.min(...h.reps));
+  let tendencia = 0;
+  if(mins.length>=3){
+    if(mins[mins.length-1] > mins[mins.length-2] && mins[mins.length-2] > mins[mins.length-3]) tendencia = 1;
+    if(mins[mins.length-1] < mins[mins.length-2] && mins[mins.length-2] < mins[mins.length-3]) tendencia = -1;
+  }
+
+  // considerar dificuldade
+  if(dificuldade >= 4){
+    base.acao = (base.acao === "REDUZIR") ? "REDUZIR" : "MANTER";
+    base.series = (base.acao==="REDUZIR") ? [8,7,6] : [10,9,8];
+    base.delta = (pesoInput!=null && pesoInput>0) ? -1 : -1;
+  } else if(dificuldade <= 2 && base.acao === "AUMENTAR"){
+    if(tendencia === 1) base.delta += 1; // micro progresso extra se consistente melhora
+  } else if(base.acao === "AUMENTAR" && name==="supino"){
+    base.delta = 1; // supino mais lento por halteres
+  }
+
+  // aplicar peso
+  let pesoAtual = exState.peso || 0;
+  if(pesoInput != null) pesoAtual = pesoInput;
+  if(name !== "barra"){
+    pesoAtual = Math.max(0, Math.round((pesoAtual + base.delta)*10)/10);
+    exState.peso = pesoAtual;
+  }
+
+  exState.variation_index = (exState.variation_index + 1) % VARIACOES[name].length;
+  state.exercises[name] = exState;
+  saveState();
+
+  return {
+    nome: name,
+    acao: base.acao,
+    proximas_series: base.series,
+    peso_proximo: exState.peso,
+    variacao: VARIACOES[name][exState.variation_index],
+    manual: MANUAL[name],
+    tendencia: tendencia,
+    delta_aplicado: base.delta
+  };
+}
+
+/* ======= UI ======= */
+const tipo = document.getElementById("tipo");
+const r1 = document.getElementById("r1");
+const r2 = document.getElementById("r2");
+const r3 = document.getElementById("r3");
+const peso = document.getElementById("peso");
+const dif = document.getElementById("dif");
+const addBtn = document.getElementById("addBtn");
+const saveBtn = document.getElementById("saveState");
+const treinoList = document.getElementById("treinoList");
+const lastAction = document.getElementById("lastAction");
+const positioning = document.getElementById("positioning");
+const perExerciseStatus = document.getElementById("perExerciseStatus");
+const resumeBtn = document.getElementById("resumeSession");
+const startQuick = document.getElementById("startQuick");
+const endSessionBtn = document.getElementById("endSession");
+const resetAllBtn = document.getElementById("resetAll");
+const generatePrintable = document.getElementById("generatePrintable");
+const downloadState = document.getElementById("downloadState");
+const importBackup = document.getElementById("importBackup");
+const loadFile = document.getElementById("loadFile");
+const sessionMode = document.getElementById("sessionMode");
+
+addBtn.onclick = function(){
+  const reps = [Number(r1.value||0), Number(r2.value||0), Number(r3.value||0)];
+  if(reps.some(v=>isNaN(v) || v<=0)){
+    alert("Preencha as 3 séries com números maiores que zero.");
+    return;
+  }
+  const pesoVal = peso.value===""?null:Number(peso.value);
+  const dificuldade = Number(dif.value);
+  const nome = tipo.value;
+
+  const planItem = ajustarComAprendizado(nome, reps, pesoVal, dificuldade);
+  treino.push(planItem);
+  session.inProgress = true;
+  if(!session.startedAt) session.startedAt = new Date().toISOString();
+  session.plan = treino;
+  saveSession();
+  mostrarTreino();
+  lastAction.innerText = `Adicionado: ${formatName(planItem.nome)} — ação: ${planItem.acao}. (salvo localmente)`;
+  r1.value=""; r2.value=""; r3.value=""; peso.value="";
+  updateStatusPanel();
+};
+
+saveBtn.onclick = function(){ saveState(); saveSession(); alert("Estado salvo."); updateStatusPanel(); };
+
+function mostrarTreino(){
+  if(treino.length===0){ treinoList.innerHTML = "Nenhum exercício adicionado ainda."; return; }
+  let html = "";
+  treino.forEach((t,i)=>{
+    html += `<div><strong>${i+1}. ${formatName(t.nome)}</strong> — ${t.acao}<br>`;
+    html += `Peso (próx.): ${t.peso_proximo} kg — Séries: ${t.proximas_series.join(", ")}<br>`;
+    html += `Variação: ${t.variacao}<br>`;
+    html += `Manual: ${t.manual.join(" | ")}<br><em class="small">delta aplicado: ${t.delta_aplicado}</em></div><hr>`;
+  });
+  treinoList.innerHTML = html;
+}
+
+function formatName(n){
+  return { supino:"Supino (halteres)", barra:"Barra fixa", paralela:"Paralela (dip)", agachamento:"Agachamento" }[n]||n;
+}
+
+function updateStatusPanel(){
+  const cur = session.currentStep || 0;
+  positioning.innerHTML = session.inProgress ? `Sessão em andamento — passo ${cur+1} de ${session.plan?session.plan.length:0}` : "Nenhuma sessão em andamento.";
+  let html = "";
+  for(const [k,v] of Object.entries(state.exercises)){
+    html += `<div><strong>${formatName(k)}</strong>: peso referência ${v.peso} kg — variação atual: ${VARIACOES[k][v.variation_index]}<br>`;
+    const last = v.history && v.history.length? v.history[v.history.length-1] : null;
+    if(last) html += `<span class="small">Último: reps ${last.reps.join(",")} | dif ${last.dif} | ${new Date(last.at).toLocaleString()}</span>`;
+    html += `</div><hr>`;
+  }
+  perExerciseStatus.innerHTML = html;
+}
+
+resumeBtn.onclick = function(){
+  const s = (function(){ try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch(e){ return null; } })();
+  if(!s || !s.plan || s.plan.length===0){ alert("Nenhuma sessão para retomar."); return; }
+  session = s; treino = session.plan;
+  mostrarTreino(); updateStatusPanel();
+  lastAction.innerText = "Sessão retomada. Continue de onde parou.";
+};
+
+startQuick.onclick = function(){
+  const mode = sessionMode.value;
+  treino = [];
+  if(mode==="A"){
+    treino.push(ajustarComAprendizado("supino",[10,9,8], state.exercises.supino.peso, 2));
+    treino.push(ajustarComAprendizado("paralela",[10,9,8], null, 2));
+  } else if(mode==="B"){
+    treino.push(ajustarComAprendizado("barra",[10,9,8], null, 2));
+    treino.push(ajustarComAprendizado("paralela",[10,9,8], null, 2));
+  } else if(mode==="C"){
+    treino.push(ajustarComAprendizado("agachamento",[10,9,8], state.exercises.agachamento.peso, 2));
+  } else { alert("Escolha modo A/B/C ou Manual."); return; }
+  session.inProgress = true; session.startedAt = session.startedAt || new Date().toISOString(); session.plan = treino; session.currentStep = 0;
+  saveSession(); mostrarTreino(); updateStatusPanel(); lastAction.innerText = "Modo rápido iniciado. Sessão criada e salva.";
+};
+
+endSessionBtn.onclick = function(){
+  if(!session.inProgress){ alert("Não há sessão em andamento."); return; }
+  session.inProgress = false; session.currentStep = 0; session.plan = []; treino = []; saveSession(); mostrarTreino(); updateStatusPanel();
+  lastAction.innerText = "Sessão finalizada. Progresso salvo no histórico.";
+};
+
+resetAllBtn.onclick = function(){
+  if(!confirm("Resetar tudo: histórico e sessões? Isso não pode ser desfeito.")) return;
+  localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(SESSION_KEY);
+  state = defaultState(); session = defaultSession(); treino = []; mostrarTreino(); updateStatusPanel(); lastAction.innerText = "Estado resetado.";
+};
+
+generatePrintable.onclick = function(){
+  if(treino.length===0){ alert("Nenhum exercício para imprimir."); return; }
+  let texto = "TREINO DO PRÓXIMO DIA (GERADO)\n\n";
+  texto += `Gerado em: ${new Date().toLocaleString()}\n\n`;
+  treino.forEach((t,i)=>{
+    texto += `${i+1}) ${formatName(t.nome)}\n`;
+    texto += `   Ação: ${t.acao}\n`;
+    texto += `   Peso (próx.): ${t.peso_proximo} kg\n`;
+    texto += `   Séries: ${t.proximas_series.join(", ")}\n`;
+    texto += `   Variação: ${t.variacao}\n\n`;
+  });
+  const w = window.open(""); w.document.write(`<pre>${texto}</pre>`); w.document.close(); w.print();
+};
+
+downloadState.onclick = function(){
+  const blob = new Blob([JSON.stringify({state,session},null,2)],{type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = `treinador_backup_${new Date().toISOString()}.json`; a.click(); URL.revokeObjectURL(url);
+};
+
+document.getElementById("importBackup").onclick = function(){ loadFile.click(); };
+loadFile.onchange = function(e){
+  const f = e.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      const data = JSON.parse(ev.target.result);
+      if(data.state && data.session){
+        state = data.state; session = data.session; treino = session.plan || []; saveState(); saveSession(); mostrarTreino(); updateStatusPanel(); alert("Backup importado com sucesso.");
+      } else { alert("Arquivo inválido. Use backup gerado por este app."); }
+    }catch(err){ alert("Erro ao ler o arquivo: " + err.message); }
+  };
+  reader.readAsText(f);
+};
+
+/* Inicialização */
+mostrarTreino(); updateStatusPanel(); lastAction.innerText = "Pronto. Estado carregado automaticamente (localStorage).";
+</script>
+
+</body>
+</html>
