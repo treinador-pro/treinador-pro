@@ -2,47 +2,47 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Treino Simples PRO</title>
+<title>Treino Guiado PRO</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<style>
-body { font-family: Arial; padding:20px; }
-button { padding:10px; margin:5px; }
-input { padding:8px; margin:5px; width:60px;}
-</style>
-</head>
+<link rel="manifest" href="manifest.json">
 
+<style>
+body { font-family: Arial; padding:20px; background:#111; color:#fff; }
+button { padding:10px; margin:5px; }
+input, select { padding:8px; margin:5px; }
+h2, h3 { margin-top:15px; }
+</style>
+
+</head>
 <body>
 
-<h2>Treino Guiado</h2>
+<h2>🏋️ Treino Guiado PRO</h2>
 
-<select id="treino" onchange="montarTreino()">
+<select id="treino" onchange="montarExercicios()">
 <option value="A">Treino A</option>
 <option value="B">Treino B</option>
 <option value="C">Treino C</option>
 </select>
 
-<button onclick="iniciar()">INICIAR</button>
-<button onclick="continuar()">CONTINUAR</button>
+<br><br>
 
-<h3 id="lista"></h3>
+<button onclick="iniciar()">INICIAR TREINO</button>
+<button onclick="continuar()">CONTINUAR TREINO</button>
+<button onclick="resetar()">RESETAR TREINO</button>
 
+<h3 id="status"></h3>
 <hr>
 
 <h3>Registrar exercício atual</h3>
-
 <div id="exercicioAtual"></div>
 
 <input id="r1" placeholder="S1">
 <input id="r2" placeholder="S2">
 <input id="r3" placeholder="S3">
-
 <br>
-
 <input id="peso" placeholder="Peso">
-
 <br>
-
 <select id="dif">
 <option value="1">Fácil</option>
 <option value="2">Leve</option>
@@ -50,140 +50,103 @@ input { padding:8px; margin:5px; width:60px;}
 <option value="4">Difícil</option>
 <option value="5">Falha</option>
 </select>
-
 <br>
-
-<button onclick="registrar()">REGISTRAR</button>
+<button onclick="registrar()">REGISTRAR EXERCÍCIO</button>
+<button onclick="imprimir()">IMPRIMIR PRÓXIMO TREINO</button>
 
 <h3 id="saida"></h3>
 
 <script>
-
-// ===== BASE =====
+// ===== BANCO DE DADOS =====
 let treinoAtual = [];
 let pos = 0;
 let db = JSON.parse(localStorage.getItem("db")) || {};
 
 // ===== TREINOS FIXOS =====
-
 const TREINOS = {
-
-A: [
-"supino_halter",
-"elevacao_lateral",
-"paralela"
-],
-
-B: [
-"barra_fixa",
-"remada_ou_terra"
-],
-
-C: [
-"agachamento"
-]
-
+A: ["supino_halter","elevacao_lateral","paralela"],
+B: ["barra_fixa","remada_ou_terra"],
+C: ["agachamento"]
 };
 
 // ===== VARIAÇÕES =====
-
 const VAR = {
-
 supino_halter:["reto","inclinado","lento"],
 elevacao_lateral:["normal","pausado"],
 paralela:["normal","inclinado","triceps"],
-barra_fixa:["pronada_aberta","pronada_fechada","supinada"],
-remada_ou_terra:["remada_barra","levantamento_terra"],
+barra_fixa:["pronada_aberta","pronada_media","pronada_fechada","supinada_aberta","supinada_media","supinada_fechada"],
+remada_ou_terra:["remada_barra","levantamento_terra","levantamento_sumo"],
 agachamento:["normal","pausado","lento"]
-
 };
 
-// ===== INICIAR =====
-
-function iniciar(){
-
-let t = treino.value;
-
-treinoAtual = TREINOS[t];
-pos = 0;
-
-mostrarExercicio();
-
-}
-
-// ===== MOSTRAR =====
-
-function mostrarExercicio(){
-
-if(pos >= treinoAtual.length){
-saida.innerHTML="TREINO FINALIZADO";
-return;
-}
-
-let ex = treinoAtual[pos];
-let v = variacao(ex);
-
-exercicioAtual.innerHTML = ex + " ("+v+")";
-
-}
-
-// ===== VARIAÇÃO =====
+// ===== FUNÇÕES =====
+function montarExercicios(){ /* só atualiza lista do seletor se quiser */ }
 
 function variacao(ex){
-
 if(!db[ex]) db[ex]={i:0,peso:0};
-
 let v = VAR[ex][db[ex].i % VAR[ex].length];
 db[ex].i++;
-
 return v;
-
 }
 
-// ===== REGISTRAR =====
+function mostrarExercicio(){
+if(pos>=treinoAtual.length){
+document.getElementById("saida").innerHTML="✅ TREINO FINALIZADO";
+document.getElementById("exercicioAtual").innerHTML="";
+return;
+}
+let ex = treinoAtual[pos];
+let v = variacao(ex);
+document.getElementById("exercicioAtual").innerHTML = ex + " ("+v+")";
+document.getElementById("status").innerHTML = "Exercício "+(pos+1)+" de "+treinoAtual.length;
+}
+
+function iniciar(){
+let t = document.getElementById("treino").value;
+treinoAtual = TREINOS[t];
+pos = 0;
+mostrarExercicio();
+}
 
 function registrar(){
-
+if(pos>=treinoAtual.length) return;
 let ex = treinoAtual[pos];
-
-let reps = [+r1.value,+r2.value,+r3.value];
+let reps = [+document.getElementById("r1").value,+document.getElementById("r2").value,+document.getElementById("r3").value];
 let peso = +document.getElementById("peso").value||0;
 let dif = +document.getElementById("dif").value;
-
 let min = Math.min(...reps);
-
-if(!db[ex]) db[ex]={peso:peso||0,i:0};
-
+if(!db[ex]) db[ex]={peso:peso,i:0};
 let base = db[ex];
-
-if(dif<=2 && min>=10){
-base.peso += 1;
-}
-else if(dif>=4){
-base.peso = Math.max(0, base.peso-1);
-}
-
+if(dif<=2 && min>=10){ base.peso += (ex=="supino_halter"?1:2); }
+else if(dif>=4){ base.peso = Math.max(0,base.peso-1); }
 localStorage.setItem("db",JSON.stringify(db));
-
 pos++;
-
 mostrarExercicio();
-
 }
-
-// ===== CONTINUAR =====
 
 function continuar(){
-
-let salvo = JSON.parse(localStorage.getItem("estado"));
-
-if(salvo){
-treinoAtual = salvo.treino;
-pos = salvo.pos;
+mostrarExercicio();
 }
 
-mostrarExercicio();
+function resetar(){
+localStorage.clear();
+db={};
+treinoAtual=[];
+pos=0;
+document.getElementById("saida").innerHTML="";
+document.getElementById("exercicioAtual").innerHTML="";
+document.getElementById("status").innerHTML="";
+}
 
+function imprimir(){
+let txt="TREINO PRÓXIMO DIA\n\n";
+treinoAtual.forEach((ex,i)=>{
+let peso = db[ex]?db[ex].peso:0;
+txt+=ex+" ("+VAR[ex][db[ex]?db[ex].i-1:0]+")\nPeso: "+peso+"\n---\n";
+});
+let w = window.open();
+w.document.write("<pre>"+txt+"</pre>");
+w.print();
 }
 
 </script>
