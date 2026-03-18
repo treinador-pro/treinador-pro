@@ -1,9 +1,9 @@
 {
-"name": "Treinador PRO",
-"short_name": "Treino",
+"name": "Treino Guiado PRO",
+"short_name": "TreinoPRO",
 "start_url": ".",
 "display": "standalone",
-"background_color": "#111",
-"theme_color": "#111",
+"background_color": "#111111",
+"theme_color": "#111111",
 "icons": []
 }
