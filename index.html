@@ -2,203 +2,156 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Treinador Pro</title>
+<title>Treinador PRO</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
+<link rel="manifest" href="manifest.json">
+
 <style>
-body { font-family: Arial; padding:20px; }
+body { font-family: Arial; padding:20px; background:#111; color:#fff; }
 button { padding:10px; margin:5px; }
+input, select { padding:8px; margin:5px; }
 </style>
 
 </head>
 
 <body>
 
-<h2>Treinador Inteligente PRO</h2>
+<h2>🏋️ Treinador PRO</h2>
 
 <select id="grupo">
-<option value="A">Treino A (Peito/Ombro/Tríceps)</option>
-<option value="B">Treino B (Costas/Bíceps)</option>
-<option value="C">Treino C (Pernas)</option>
+<option value="A">Treino A</option>
+<option value="B">Treino B</option>
+<option value="C">Treino C</option>
 </select>
 
-<br><br>
+<br>
 
-<button onclick="modoRapido()">INICIAR TREINO</button>
+<button onclick="iniciar()">INICIAR</button>
 <button onclick="continuar()">CONTINUAR</button>
-<button onclick="resetar()">RESETAR</button>
+<button onclick="resetar()">RESET</button>
 
-<h3 id="posicao"></h3>
+<h3 id="status"></h3>
 
 <hr>
 
-<h3>Registrar exercício</h3>
+<h3>Registrar</h3>
 
 <select id="ex">
-<option value="barra">Barra fixa</option>
+<option value="barra">Barra</option>
 <option value="paralela">Paralela</option>
-<option value="supino">Supino halteres</option>
+<option value="supino">Supino</option>
 <option value="ombro">Ombro</option>
 <option value="puxada">Costas</option>
 <option value="perna">Pernas</option>
 </select>
 
-<br><br>
+<br>
 
 <input id="r1" placeholder="S1">
 <input id="r2" placeholder="S2">
 <input id="r3" placeholder="S3">
 
-<br><br>
+<br>
 
 <input id="peso" placeholder="Peso">
 
-<br><br>
+<br>
 
 <select id="dif">
 <option value="1">Fácil</option>
 <option value="2">Leve</option>
 <option value="3">Médio</option>
 <option value="4">Difícil</option>
-<option value="5">Muito difícil</option>
+<option value="5">Falha</option>
 </select>
 
-<br><br>
+<br>
 
-<button onclick="add()">REGISTRAR</button>
-<button onclick="imprimir()">IMPRIMIR TREINO</button>
+<button onclick="registrar()">REGISTRAR</button>
+<button onclick="imprimir()">IMPRIMIR</button>
 
 <h3 id="saida"></h3>
 
 <script>
 
-// ===== BASE COMPLETA =====
-
+// ===== BANCO =====
 let db = JSON.parse(localStorage.getItem("db")) || {};
 let treino = JSON.parse(localStorage.getItem("treino")) || [];
 
-// ===== VARIAÇÕES COMPLETAS =====
+// ===== EXERCÍCIOS =====
+const VAR = {
 
-const EXERCICIOS = {
+barra:["pronada_aberta","pronada_media","pronada_fechada","supinada_aberta","supinada_media","supinada_fechada"],
 
-barra: [
-"pronada_aberta","pronada_media","pronada_fechada",
-"supinada_aberta","supinada_media","supinada_fechada"
-],
+paralela:["peito","triceps","peso","pernas_elevadas"],
 
-paralela: [
-"peito","triceps","peso","pernas_elevadas"
-],
+supino:["halter_reto","halter_inclinado","halter_lento"],
 
-supino: [
-"halter_reto","halter_inclinado","halter_lento"
-],
+ombro:["lateral_halter","frontal_halter","frontal_barra"],
 
-ombro: [
-"elevacao_lateral_halter",
-"elevacao_frontal_halter",
-"elevacao_frontal_barra"
-],
+puxada:["remada_barra","terra","sumo"],
 
-puxada: [
-"remada_barra",
-"levantamento_terra",
-"levantamento_sumo"
-],
-
-perna: [
-"agachamento",
-"agachamento_pausado",
-"agachamento_lento"
-]
+perna:["agachamento","agachamento_pausado","agachamento_lento"]
 
 };
 
-// ===== VARIAÇÃO AUTOMÁTICA =====
-
-function variacao(grupo){
-
+// ===== VARIAÇÃO =====
+function prox(grupo){
 if(!db[grupo]) db[grupo]={i:0,peso:0};
-
-let lista = EXERCICIOS[grupo];
-let v = lista[db[grupo].i % lista.length];
-
+let v = VAR[grupo][db[grupo].i % VAR[grupo].length];
 db[grupo].i++;
-
 return v;
 }
 
-// ===== MANUAL =====
-
-function manual(v){
-
-return {
-pronada_aberta:["Abrir pegada","Subir até queixo","Sem balanço"],
-supinada_media:["Pegada média","Subir forte","Controlar descida"],
-elevacao_lateral_halter:["Subir até ombro","Controlar","Não roubar"],
-remada_barra:["Puxar abdômen","Coluna firme","Descer lento"],
-levantamento_terra:["Coluna neutra","Força quadril","Barra próxima"],
-agachamento:["Descer lento","Coluna neutra","Subir forte"]
-
-}[v] || ["Execução perfeita","Controle total","Sem roubo"];
-}
-
 // ===== PROGRESSÃO =====
-
-function calcular(grupo,reps,peso,dif){
+function calc(grupo,reps,peso,dif){
 
 if(!db[grupo]) db[grupo]={peso:peso||0,i:0};
 
-let base = db[grupo];
 let min = Math.min(...reps);
+let base = db[grupo];
 
-let acao, novas, novoPeso = base.peso;
+let novoPeso = base.peso;
+let acao, series;
 
 if(dif>=4){
-acao="REDUZIR OU MANTER";
-novas=[8,7,6];
+acao="REDUZIR";
 novoPeso = Math.max(0, base.peso-1);
+series=[8,7,6];
 }
 else if(dif==3){
 acao="MANTER";
-novas=[10,9,8];
+series=[10,9,8];
 }
 else{
 if(min>=10){
-acao="AUMENTAR PESO";
+acao="SUBIR PESO";
 novoPeso += (grupo=="supino"?1:2);
-novas=[10,9,8];
+series=[10,9,8];
 }else{
-acao="AUMENTAR REP";
-novas=[11,10,9];
+acao="SUBIR REP";
+series=[11,10,9];
 }
 }
 
 base.peso=novoPeso;
 
-let v = variacao(grupo);
+let v = prox(grupo);
 
-return {
-grupo,
-variacao:v,
-acao,
-peso:novoPeso,
-series:novas,
-manual:manual(v)
-};
+return {grupo,variacao:v,peso:novoPeso,acao,series};
 
 }
 
 // ===== REGISTRAR =====
+function registrar(){
 
-function add(){
-
-let grupo = ex.value;
+let g = ex.value;
 let reps=[+r1.value,+r2.value,+r3.value];
 let peso = +document.getElementById("peso").value||0;
 let dif = +document.getElementById("dif").value;
 
-let r = calcular(grupo,reps,peso,dif);
+let r = calc(g,reps,peso,dif);
 
 treino.push(r);
 
@@ -208,72 +161,56 @@ mostrar();
 }
 
 // ===== MOSTRAR =====
-
 function mostrar(){
 
-let html="<b>PRÓXIMO TREINO (NÃO É HOJE)</b><br><br>";
+let html="PRÓXIMO TREINO:<br><br>";
 
 treino.forEach(t=>{
-html+=`
-${t.variacao}<br>
-${t.acao}<br>
-Peso: ${t.peso}<br>
-Séries: ${t.series.join(",")}<br>
-Manual: ${t.manual.join("<br>")}<br>
-------<br>
-`;
+html+=`${t.variacao}<br>${t.acao}<br>Peso:${t.peso}<br>Séries:${t.series.join(",")}<br><br>`;
 });
 
 saida.innerHTML=html;
-
-posicao.innerHTML="Exercícios feitos hoje: "+treino.length;
+status.innerHTML="Exercícios hoje: "+treino.length;
 
 }
 
 // ===== SALVAR =====
-
 function salvar(){
 localStorage.setItem("db",JSON.stringify(db));
 localStorage.setItem("treino",JSON.stringify(treino));
 }
 
 // ===== CONTINUAR =====
-
-function continuar(){
-mostrar();
-}
+function continuar(){ mostrar(); }
 
 // ===== RESET =====
-
 function resetar(){
 localStorage.clear();
 db={};
 treino=[];
-saida.innerHTML="";
-posicao.innerHTML="";
+mostrar();
 }
 
-// ===== MODO RÁPIDO =====
-
-function modoRapido(){
+// ===== INICIAR =====
+function iniciar(){
 
 treino=[];
 
-let g = document.getElementById("grupo").value;
+let g = grupo.value;
 
 if(g=="A"){
-treino.push(calcular("supino",[10,9,8],10,2));
-treino.push(calcular("ombro",[10,9,8],6,2));
-treino.push(calcular("paralela",[10,9,8],0,2));
+treino.push(calc("supino",[10,9,8],10,2));
+treino.push(calc("ombro",[10,9,8],6,2));
+treino.push(calc("paralela",[10,9,8],0,2));
 }
 
 if(g=="B"){
-treino.push(calcular("barra",[10,9,8],0,2));
-treino.push(calcular("puxada",[10,9,8],20,2));
+treino.push(calc("barra",[10,9,8],0,2));
+treino.push(calc("puxada",[10,9,8],20,2));
 }
 
 if(g=="C"){
-treino.push(calcular("perna",[10,9,8],30,2));
+treino.push(calc("perna",[10,9,8],30,2));
 }
 
 salvar();
@@ -282,22 +219,21 @@ mostrar();
 }
 
 // ===== IMPRIMIR =====
-
 function imprimir(){
-
-let txt="TREINO DO PRÓXIMO DIA\n\n";
-
-treino.forEach(t=>{
-txt+=`${t.variacao}\nPeso:${t.peso}\nSéries:${t.series.join(",")}\n\n`;
+let t="TREINO\n\n";
+treino.forEach(x=>{
+t+=`${x.variacao}\nPeso:${x.peso}\nSéries:${x.series.join(",")}\n\n`;
 });
-
 let w=window.open();
-w.document.write("<pre>"+txt+"</pre>");
+w.document.write("<pre>"+t+"</pre>");
 w.print();
-
 }
 
-// iniciar
+// ===== PWA =====
+if('serviceWorker' in navigator){
+navigator.serviceWorker.register('service-worker.js');
+}
+
 mostrar();
 
 </script>
